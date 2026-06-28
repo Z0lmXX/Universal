@@ -788,14 +788,17 @@ RunService.Heartbeat:Connect(function()
     end
 
     if states.Fly.Enabled then
-        if humanoid:GetState() ~= Enum.HumanoidStateType.Physics then
+        local isSitting = humanoid.Sit and humanoid.SeatPart
+        
+        if not isSitting and humanoid:GetState() ~= Enum.HumanoidStateType.Physics then
             humanoid:ChangeState(Enum.HumanoidStateType.Physics)
         end
 
-        -- Determine physics target: Character HRP or Vehicle PrimaryPart
+        -- Determine movement target: Character HRP or Vehicle Root
         local targetPhysicsPart = rootPart
-        if humanoid.Sit and humanoid.SeatPart then
-            local vehicleModel = humanoid.SeatPart:FindFirstAncestorOfClass("Model")
+        local vehicleModel = nil
+        if isSitting then
+            vehicleModel = humanoid.SeatPart:FindFirstAncestorOfClass("Model")
             if vehicleModel then
                 targetPhysicsPart = vehicleModel.PrimaryPart or humanoid.SeatPart
             else
@@ -803,7 +806,7 @@ RunService.Heartbeat:Connect(function()
             end
         end
 
-        targetPhysicsPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+        -- Calculate directional vector
         local flyDirection = Vector3.new(0, 0, 0)
         
         if UserInputService:IsKeyDown(Enum.KeyCode.W) then
@@ -828,9 +831,29 @@ RunService.Heartbeat:Connect(function()
             end
         end
 
-        if flyDirection.Magnitude > 0 then
-            flyDirection = flyDirection.Unit
-            targetPhysicsPart.AssemblyLinearVelocity = flyDirection * states.Fly.Value
+        -- Apply flight forces
+        if isSitting and vehicleModel then
+            -- BOAT FLIGHT SPECIFIC: Use direct CFrame manipulation to break the water constraint
+            targetPhysicsPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            targetPhysicsPart.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+            
+            if flyDirection.Magnitude > 0 then
+                flyDirection = flyDirection.Unit
+                -- Move via CFrame increments (~1/60th of speed value per frame)
+                local speedModifier = states.Fly.Value / 60
+                local newCFrame = targetPhysicsPart.CFrame + (flyDirection * speedModifier)
+                
+                -- Orient the boat slightly toward camera direction for realism
+                local lookAtTarget = newCFrame.Position + camera.CFrame.LookVector
+                targetPhysicsPart.CFrame = CFrame.new(newCFrame.Position, Vector3.new(lookAtTarget.X, newCFrame.Position.Y, lookAtTarget.Z))
+            end
+        else
+            -- STANDARD PLAYER CHARACTER FLIGHT: Use Velocity
+            targetPhysicsPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            if flyDirection.Magnitude > 0 then
+                flyDirection = flyDirection.Unit
+                targetPhysicsPart.AssemblyLinearVelocity = flyDirection * states.Fly.Value
+            end
         end
     else
         if humanoid:GetState() == Enum.HumanoidStateType.Physics and not states.Fling.Enabled then
